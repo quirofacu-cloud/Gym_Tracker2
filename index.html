@@ -77,7 +77,25 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Ar
 .prog-s { font-size: 12px; color: var(--text3); }
 .empty { text-align: center; padding: 40px 20px; color: var(--text3); font-size: 14px; line-height: 1.7; }
 .toast-bar { position: fixed; bottom: -80px; left: 16px; right: 16px; background: var(--green); color: #fff; padding: 14px; border-radius: var(--radius); text-align: center; font-size: 14px; font-weight: 500; transition: bottom .3s cubic-bezier(.4,0,.2,1); z-index: 999; }
-.toast-bar.show { bottom: 24px; }
+.toast-bar.show { bottom: 96px; }
+.timer-bar { position: fixed; bottom: 0; left: 0; right: 0; background: var(--card); border-top: 1px solid var(--border); z-index: 998; padding: 10px 16px 14px; }
+.timer-main { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.timer-display { font-size: 32px; font-weight: 700; font-variant-numeric: tabular-nums; min-width: 80px; color: var(--text); transition: color .3s; }
+.timer-display.urgent { color: #E24B4A; }
+.timer-display.done-color { color: var(--green); }
+.timer-controls { display: flex; gap: 6px; flex: 1; justify-content: flex-end; }
+.t-btn { height: 40px; min-width: 40px; padding: 0 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); background: var(--bg); color: var(--text); font-size: 14px; font-weight: 600; cursor: pointer; transition: all .12s; }
+.t-btn:active { transform: scale(.93); }
+.t-btn.running { background: #E24B4A; color: #fff; border-color: #E24B4A; }
+.t-btn.start { background: var(--green); color: #fff; border-color: var(--green); }
+.timer-presets { display: flex; gap: 5px; }
+.preset-btn { flex: 1; height: 30px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text2); font-size: 12px; font-weight: 500; cursor: pointer; transition: all .12s; }
+.preset-btn:active { transform: scale(.93); }
+.preset-btn.active-preset { background: var(--blue); color: #fff; border-color: var(--blue); }
+.timer-progress { height: 3px; background: var(--border); border-radius: 2px; margin-bottom: 8px; overflow: hidden; }
+.timer-progress-fill { height: 100%; border-radius: 2px; background: var(--green); transition: width .5s linear, background .3s; }
+.timer-progress-fill.urgent { background: #E24B4A; }
+.content { padding: 0 16px 160px; }
 .info-note { background: var(--card); border: 1px solid var(--border); border-left: 3px solid var(--blue); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; padding: 10px 14px; margin-bottom: 14px; font-size: 13px; color: var(--text2); line-height: 1.6; }
 .progress-bar-wrap { height: 6px; background: var(--border); border-radius: 3px; margin-bottom: 14px; overflow: hidden; }
 .progress-bar-fill { height: 100%; border-radius: 3px; background: var(--green); transition: width .3s ease; }
@@ -118,6 +136,23 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Ar
 </div>
 
 <div class="content" id="content"></div>
+<div class="timer-bar" id="timer-bar">
+  <div class="timer-progress"><div class="timer-progress-fill" id="t-prog" style="width:100%"></div></div>
+  <div class="timer-main">
+    <div class="timer-display" id="t-display">0:00</div>
+    <div class="timer-controls">
+      <button class="t-btn" id="t-reset" onclick="timerReset()">↺</button>
+      <button class="t-btn start" id="t-toggle" onclick="timerToggle()">▶ Iniciar</button>
+    </div>
+  </div>
+  <div class="timer-presets">
+    <button class="preset-btn" onclick="timerSet(60)">1 min</button>
+    <button class="preset-btn" id="pre-90" onclick="timerSet(90)">90 seg</button>
+    <button class="preset-btn" onclick="timerSet(120)">2 min</button>
+    <button class="preset-btn" onclick="timerSet(180)">3 min</button>
+    <button class="preset-btn" onclick="timerSet(240)">4 min</button>
+  </div>
+</div>
 <div class="toast-bar" id="toast"></div>
 
 <script>
@@ -493,8 +528,104 @@ function renderContent() {
   }
 }
 
+/* ─── TIMER ─── */
+const REST_MAP = {'3–4 min':210,'3 min':180,'2–3 min':150,'2 min':120,'90 seg':90,'60 seg':60};
+let tTotal=90, tRemaining=90, tRunning=false, tInterval=null;
+
+function restSecs(restStr){ return REST_MAP[restStr]||90; }
+
+function timerSet(secs, autoStart=false){
+  timerStop();
+  tTotal=secs; tRemaining=secs;
+  updateTimerUI();
+  document.querySelectorAll('.preset-btn').forEach(b=>{
+    b.classList.toggle('active-preset', parseInt(b.textContent)*60===secs||
+      (b.textContent==='90 seg'&&secs===90)||(b.textContent==='1 min'&&secs===60)||
+      (b.textContent==='2 min'&&secs===120)||(b.textContent==='3 min'&&secs===180)||(b.textContent==='4 min'&&secs===240));
+  });
+  if(autoStart) timerStart();
+}
+
+function timerStart(){
+  if(tRunning||tRemaining<=0) return;
+  tRunning=true;
+  const btn=document.getElementById('t-toggle');
+  if(btn){btn.textContent='⏸ Pausar';btn.classList.remove('start');btn.classList.add('running');}
+  tInterval=setInterval(()=>{
+    tRemaining--;
+    updateTimerUI();
+    if(tRemaining<=0){ timerStop(); timerDone(); }
+  },1000);
+}
+
+function timerStop(){
+  tRunning=false;
+  clearInterval(tInterval); tInterval=null;
+  const btn=document.getElementById('t-toggle');
+  if(btn){btn.textContent='▶ Iniciar';btn.classList.add('start');btn.classList.remove('running');}
+}
+
+function timerToggle(){ tRunning?timerStop():timerStart(); }
+
+function timerReset(){
+  timerStop();
+  tRemaining=tTotal;
+  updateTimerUI();
+}
+
+function updateTimerUI(){
+  const m=Math.floor(tRemaining/60);
+  const s=tRemaining%60;
+  const disp=document.getElementById('t-display');
+  const prog=document.getElementById('t-prog');
+  if(disp){
+    disp.textContent=m+':'+(s<10?'0':'')+s;
+    disp.className='timer-display'+(tRemaining<=10&&tRunning?' urgent':tRemaining===0?' done-color':'');
+  }
+  if(prog){
+    const pct=tTotal>0?Math.round(tRemaining/tTotal*100):100;
+    prog.style.width=pct+'%';
+    prog.className='timer-progress-fill'+(tRemaining<=10&&tRunning?' urgent':'');
+  }
+}
+
+function timerDone(){
+  tRemaining=0; updateTimerUI();
+  beep();
+  if(navigator.vibrate) navigator.vibrate([300,100,300]);
+  showToast('Descanso terminado — ¡a la siguiente serie!');
+}
+
+function beep(){
+  try {
+    const ctx=new(window.AudioContext||window.webkitAudioContext)();
+    [0,0.35,0.65].forEach((t,i)=>{
+      const o=ctx.createOscillator();
+      const g=ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.frequency.value = i===2?880:660;
+      g.gain.setValueAtTime(0.4,ctx.currentTime+t);
+      g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+t+0.25);
+      o.start(ctx.currentTime+t);
+      o.stop(ctx.currentTime+t+0.25);
+    });
+  } catch(e){}
+}
+
+/* patch toggleSet to auto-start timer */
+const _origToggleSet = toggleSet;
+window.toggleSet = function(i,s){
+  _origToggleSet(i,s);
+  if(session[i]&&session[i][s]){
+    const ex=DAYS[curDay].ex[i];
+    const secs=restSecs(ex.rest);
+    timerSet(secs, true);
+  }
+};
+
 renderTabs();
 renderContent();
+timerSet(90);
 </script>
 </body>
 </html>
